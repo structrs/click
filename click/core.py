@@ -1,6 +1,7 @@
 import errno
 import os
 import sys
+import asyncio
 from contextlib import contextmanager
 from itertools import repeat
 from functools import update_wrapper
@@ -9,7 +10,7 @@ from .types import convert_type, IntRange, BOOL
 from .utils import make_str, make_default_short_help, echo, get_os_args
 from .exceptions import ClickException, UsageError, BadParameter, Abort, \
      MissingParameter
-from .termui import prompt, confirm
+from .termui import prompt, confirm, reset_terminal
 from .formatting import HelpFormatter, join_options
 from .parser import OptionParser, split_opt
 from .globals import push_context, pop_context
@@ -541,7 +542,12 @@ class Context(object):
         args = args[2:]
         with augment_usage_errors(self):
             with ctx:
-                return callback(*args, **kwargs)
+                result = callback(*args, **kwargs)
+                if asyncio.iscoroutine(result):
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(result)
+                    loop.close()
+
 
     def forward(*args, **kwargs):
         """Similar to :meth:`invoke` but fills in default keyword
@@ -708,6 +714,7 @@ class BaseCommand(object):
                         return rv
                     ctx.exit()
             except (EOFError, KeyboardInterrupt):
+                reset_terminal()
                 echo(file=sys.stderr)
                 raise Abort()
             except ClickException as e:

@@ -1,6 +1,7 @@
 import os
 import sys
 import struct
+from contextlib import contextmanager
 
 from ._compat import raw_input, text_type, string_types, \
      isatty, strip_ansi, get_winterm_size, DEFAULT_COLUMNS, WIN
@@ -17,6 +18,8 @@ visible_prompt_func = raw_input
 _ansi_colors = ('black', 'red', 'green', 'yellow', 'blue', 'magenta',
                 'cyan', 'white', 'reset')
 _ansi_reset_all = '\033[0m'
+
+_term_info = None
 
 
 def hidden_prompt_func(prompt):
@@ -547,3 +550,54 @@ def pause(info='Press any key to continue ...', err=False):
     finally:
         if info:
             echo(err=err)
+
+
+@contextmanager
+def hide_input():
+    global _term_info
+    fd = None
+    try:
+        # Always try reading and writing directly on the tty first.
+        fd = os.open('/dev/tty', os.O_RDWR|os.O_NOCTTY)
+    except EnvironmentError as e:
+        # If that fails, see if stdin can be controlled.
+        try:
+            fd = sys.stdin.fileno()
+        except (AttributeError, ValueError):
+            pass
+
+    if fd is not None:
+        import termios
+        try:
+            old = termios.tcgetattr(fd)     # a copy to save
+            _term_info = (fd, old)
+            new = old[:]
+            new[3] &= ~termios.ECHO  # 3 == 'lflags'
+            tcsetattr_flags = termios.TCSAFLUSH
+            if hasattr(termios, 'TCSASOFT'):
+                tcsetattr_flags |= termios.TCSASOFT
+            try:
+                termios.tcsetattr(fd, tcsetattr_flags, new)
+                yield
+            finally:
+                reset_terminal()
+        except termios.error as e:
+            yield
+    else:
+        yield
+
+
+def reset_terminal():
+    global _term_info
+    if _term_info is not None:
+        import termios
+        tcsetattr_flags = termios.TCSAFLUSH
+        if hasattr(termios, 'TCSASOFT'):
+            tcsetattr_flags |= termios.TCSASOFT
+        termios.tcsetattr(_term_info[0], tcsetattr_flags, _term_info[1])
+        _term_info = None
+
+        # The cursor seems to vanish even after resetting everything. Not
+        # sure why, so am just going to force it back on here.
+        # TODO: Figure out why this is required.
+        os.system('setterm -cursor on')

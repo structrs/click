@@ -37,7 +37,7 @@ from .utils import echo, get_binary_stream, get_text_stream, open_file, \
 # Terminal functions
 from .termui import prompt, confirm, get_terminal_size, echo_via_pager, \
      progressbar, clear, style, unstyle, secho, edit, launch, getchar, \
-     pause
+     pause, hide_input
 
 # Exceptions
 from .exceptions import ClickException, UsageError, BadParameter, \
